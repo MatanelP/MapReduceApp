@@ -44,8 +44,8 @@ public:
 
 			KChar* k2 = new KChar(i);
 			VCount* v2 = new VCount(counts[i]);
-			usleep(150000);
-			emit2(k2, v2, context);
+//			usleep(150000);
+            emit2(k2, v2, context);
 		}
 	}
 
