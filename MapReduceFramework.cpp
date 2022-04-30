@@ -26,6 +26,8 @@ struct ThreadContext {
 
 struct Job {
 
+    ThreadContext* contexts_;
+
 };
 
 //// setting the first 2 bits of the atomic counter according to the stage given
@@ -187,7 +189,7 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
     }
 
   // creating JobHandler
-  return (JobHandle) new Job;
+  return (JobHandle) new Job{contexts};
 
 }
 
@@ -197,7 +199,27 @@ void waitForJob (JobHandle job)
 }
 void getJobState (JobHandle job, JobState *state)
 {
-  // filling the state given according tto the jobHandler given
+    Job* curr_job = (Job*) job;
+    if (curr_job->contexts_[0].outputVec-> empty()){
+        if (curr_job->contexts_[0].shuffledVectors->empty()){
+            if (*(curr_job->contexts_[0].numOfIntermediatePairs) != 0){
+                // in map phase, need to calculate percentage completion
+            }
+            else {
+                state->stage = UNDEFINED_STAGE;
+                state->percentage = 0;
+            }
+        }
+        else{
+            // in shuffle phase, need to calculate percentage of shuffle completion
+        }
+    }
+    else{
+        // in reduce phase, need to calculate percentage of output vector completion
+    }
+
+
+
 }
 void closeJobHandle (JobHandle job)
 {
