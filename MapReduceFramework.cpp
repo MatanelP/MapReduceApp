@@ -18,7 +18,7 @@ struct ThreadContext {
   OutputVec *outputVec;
   int totalThreadsCount;
   IntermediateVec **intermediateVectors;
-  std::atomic<int> *mappingCounter;
+  std::atomic<long> *counter;
 
 };
 
@@ -26,16 +26,53 @@ struct Job {
 
 };
 
+//// setting the first 2 bits of the atomic counter according to the stage given
+//void setStageBitWise(std::atomic<long> *counter, stage_t stage){
+//  switch (stage)
+//    {
+//      case UNDEFINED_STAGE:
+//        counter->store (counter->load (),std::memory_order_relaxed);
+//        break;
+//      case MAP_STAGE:
+//        break;
+//      case SHUFFLE_STAGE:
+//        break;
+//      case REDUCE_STAGE:
+//        break;
+//    }
+//}
+
 void emit2 (K2 *key, V2 *value, void *context)
 {
   ThreadContext *tc = (ThreadContext *) context;
-  tc->intermediateVectors[tc->threadID]->push_back ({key, value});
+  IntermediatePair intermediatePair = {key, value};
+  tc->intermediateVectors[tc->threadID]->push_back (intermediatePair);
 }
 void emit3 (K3 *key, V3 *value, void *context)
 {
 
 }
 
+void mapPhase (ThreadContext *tc)
+{// setStageBitWise (tc->counter, MAP_STAGE);
+  tc->stage = MAP_STAGE;
+  long index = (*(tc->counter)).fetch_add (1);
+  while (index < tc->inputVec->size ())
+    {
+      InputPair inputPair = tc->inputVec->at (index);
+      tc->client->map (inputPair.first, inputPair.second, tc);
+      index = (*(tc->counter)).fetch_add (1);
+    }
+}
+void sortPhase (const ThreadContext *tc)
+{
+  IntermediateVec *interVec = tc->intermediateVectors[tc->threadID];
+  std::sort (interVec->begin (), interVec->end (),
+             [] (IntermediatePair a, IntermediatePair b)
+             {
+               return *b.first < *a.first;
+             });
+}
 /**
  * function to be called upon by each thread, starting its map-reduce
  * algorithm part:
@@ -44,24 +81,21 @@ void emit3 (K3 *key, V3 *value, void *context)
 void *threadMapReduce (void *arg)
 {
   ThreadContext *tc = (ThreadContext *) arg;
-  //  mapping:
-  tc->stage = MAP_STAGE;
-  int index = (*(tc->mappingCounter))++;
-  while (index < tc->inputVec->size ())
-    {
-      InputPair inputPair = tc->inputVec->at (index);
-      tc->client->map (inputPair.first, inputPair.second, tc);
-      index = (*(tc->mappingCounter))++;
-    }
-  // sorting:
-  IntermediateVec *interVec = tc->intermediateVectors[tc->threadID];
-  std::sort (interVec->begin (), interVec->end (),
-             [] (IntermediatePair a, IntermediatePair b)
-             {
-               return *b.first < *a.first;
-             });
+  // mapping:
+  mapPhase (tc);
 
+  // sorting:
+  sortPhase (tc);
+
+  // barrier:
   tc->barrier->barrier ();
+
+  // shuffle:
+  if (tc->threadID == 0){
+
+  }
+
+  // reduce:
 
   return 0;
 }
@@ -74,16 +108,16 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
   ThreadContext contexts[multiThreadLevel];
   auto *barrier = new Barrier (multiThreadLevel);
   auto **intermediateVectors = new IntermediateVec *[multiThreadLevel];
-  std::atomic<int> mappingCounter (0);
+  std::atomic<long> counter (0);
 
 
-//    creating new intermediate vectors
+  // creating new intermediate vectors
   for (int i = 0; i < multiThreadLevel; ++i)
     {
       intermediateVectors[i] = new IntermediateVec ();
     }
 
-//    init all contexts
+  // init all contexts
   for (int i = 0; i < multiThreadLevel; ++i)
     {
       ThreadContext &context = contexts[i];
@@ -95,7 +129,7 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
       context.outputVec = &outputVec;
       context.totalThreadsCount = multiThreadLevel;
       context.intermediateVectors = intermediateVectors;
-      context.mappingCounter = &mappingCounter;
+      context.counter = &counter;
     }
 
   for (int i = 0; i < multiThreadLevel; ++i)
