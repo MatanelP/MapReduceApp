@@ -19,6 +19,8 @@ struct ThreadContext {
   int totalThreadsCount;
   IntermediateVec **intermediateVectors;
   std::atomic<long> *counter;
+  int *numOfIntermediatePairs;
+  std::vector<IntermediateVec *> *shuffledVectors;
 
 };
 
@@ -67,11 +69,46 @@ void mapPhase (ThreadContext *tc)
 void sortPhase (const ThreadContext *tc)
 {
   IntermediateVec *interVec = tc->intermediateVectors[tc->threadID];
+  *(tc->numOfIntermediatePairs) += (int) interVec->size ();
   std::sort (interVec->begin (), interVec->end (),
              [] (IntermediatePair a, IntermediatePair b)
              {
                return *b.first < *a.first;
              });
+}
+void shufflePhase (ThreadContext *tc)
+{
+  tc->stage = SHUFFLE_STAGE;
+  if (tc->threadID == 0)
+    {
+      int sortedPairs = 0;
+      for (int i = 0; i < tc->totalThreadsCount; i++)
+        {
+          IntermediateVec *currentVec = tc->intermediateVectors[i];
+          while (!currentVec->empty ())
+            {
+              IntermediatePair pair = currentVec->back ();
+              K2 *key = pair.first;
+              auto *vecForKey = new IntermediateVec ();
+              for (int j = 0; j < tc->totalThreadsCount; j++)
+                {
+                  IntermediateVec *interVec = tc->intermediateVectors[j];
+                  if (interVec->empty ()) continue;
+                  K2 *keyToAdd = interVec->at (interVec->size () - 1).first;
+                  while (!interVec->empty () &&
+                         !(*keyToAdd < *key || *key < *keyToAdd))
+                    {
+                      vecForKey->push_back (interVec->back ());
+                      interVec->pop_back ();
+                      sortedPairs++;
+                      if (interVec->empty ()) break;
+                      keyToAdd = interVec->at (interVec->size () - 1).first;
+                    }
+                }
+              tc->shuffledVectors->push_back (vecForKey);
+            }
+        }
+    }
 }
 /**
  * function to be called upon by each thread, starting its map-reduce
@@ -91,9 +128,11 @@ void *threadMapReduce (void *arg)
   tc->barrier->barrier ();
 
   // shuffle:
-  if (tc->threadID == 0){
+  shufflePhase (tc);
 
-  }
+  // barrier (we can also use semaphore to make sure
+  //          all threads are waiting for thread 0 to finish shuffling):
+  tc->barrier->barrier ();
 
   // reduce:
 
@@ -109,6 +148,9 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
   auto *barrier = new Barrier (multiThreadLevel);
   auto **intermediateVectors = new IntermediateVec *[multiThreadLevel];
   std::atomic<long> counter (0);
+  int *numOfIntermediatePairs = new int (0);
+  auto *shuffledVectors = new std::vector<IntermediateVec *> ();
+
 
 
   // creating new intermediate vectors
@@ -130,6 +172,8 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
       context.totalThreadsCount = multiThreadLevel;
       context.intermediateVectors = intermediateVectors;
       context.counter = &counter;
+      context.numOfIntermediatePairs = numOfIntermediatePairs;
+      context.shuffledVectors = shuffledVectors;
     }
 
   for (int i = 0; i < multiThreadLevel; ++i)

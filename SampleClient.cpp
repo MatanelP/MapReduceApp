@@ -71,9 +71,9 @@ int main(int argc, char** argv)
 	CounterClient client;
 	InputVec inputVec;
 	OutputVec outputVec;
-	VString s1("This string is full of characters");
-	VString s2("Multithreading is awesome");
-	VString s3("race conditions are bad");
+	VString s1("ababab");
+	VString s2("bcbcbc");
+	VString s3("cacacad");
 	inputVec.push_back({nullptr, &s1});
 	inputVec.push_back({nullptr, &s2});
 	inputVec.push_back({nullptr, &s3});
