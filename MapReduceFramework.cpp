@@ -206,6 +206,7 @@ void getJobState (JobHandle job, JobState *state)
                 // in map phase, need to calculate percentage completion
             }
             else {
+                // haven't started map phase yet
                 state->stage = UNDEFINED_STAGE;
                 state->percentage = 0;
             }
