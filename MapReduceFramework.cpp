@@ -27,6 +27,8 @@ struct ThreadContext {
 struct Job {
 
     ThreadContext* contexts_;
+    int numOfThreads;
+    int inputSize;
 
 };
 
@@ -189,7 +191,8 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
     }
 
   // creating JobHandler
-  return (JobHandle) new Job{contexts};
+
+  return (JobHandle) new Job{contexts,multiThreadLevel,(int) inputVec.size()};
 
 }
 
@@ -204,6 +207,8 @@ void getJobState (JobHandle job, JobState *state)
         if (curr_job->contexts_[0].shuffledVectors->empty()){
             if (*(curr_job->contexts_[0].numOfIntermediatePairs) != 0){
                 // in map phase, need to calculate percentage completion
+                state->stage = MAP_STAGE;
+                state->percentage = (float) curr_job->contexts_[0].inputVec->size() / (float) curr_job->inputSize;
             }
             else {
                 // haven't started map phase yet
@@ -213,10 +218,15 @@ void getJobState (JobHandle job, JobState *state)
         }
         else{
             // in shuffle phase, need to calculate percentage of shuffle completion
+            state->stage = SHUFFLE_STAGE;
+            state->percentage = (float) curr_job->contexts_->shuffledVectors->size() / (float) curr_job->numOfThreads;
+
         }
     }
     else{
         // in reduce phase, need to calculate percentage of output vector completion
+        state->stage = REDUCE_STAGE;
+        state->percentage = (float) curr_job->contexts_[0].outputVec->size() /(float) curr_job->inputSize ;
     }
 
 
