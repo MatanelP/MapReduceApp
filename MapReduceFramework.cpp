@@ -21,7 +21,7 @@ struct ThreadContext {
   std::atomic<long> *counter;
   int *numOfIntermediatePairs;
   std::vector<IntermediateVec *> *shuffledVectors;
-
+  std::vector<int>* sizesOfShuffledVectors;
 };
 
 struct Job {
@@ -86,6 +86,7 @@ void shufflePhase (ThreadContext *tc)
   if (tc->threadID == 0)
     {
       int sortedPairs = 0;
+      tc->counter->operator=(0);
       for (int i = 0; i < tc->totalThreadsCount; i++)
         {
           IntermediateVec *currentVec = tc->intermediateVectors[i];
@@ -105,11 +106,13 @@ void shufflePhase (ThreadContext *tc)
                       vecForKey->push_back (interVec->back ());
                       interVec->pop_back ();
                       sortedPairs++;
+                      tc->counter->fetch_add(1);
                       if (interVec->empty ()) break;
                       keyToAdd = interVec->at (interVec->size () - 1).first;
                     }
                 }
               tc->shuffledVectors->push_back (vecForKey);
+              tc->sizesOfShuffledVectors->push_back((int) vecForKey->size());
             }
         }
     }
@@ -208,7 +211,7 @@ void getJobState (JobHandle job, JobState *state)
             if (*(curr_job->contexts_[0].numOfIntermediatePairs) != 0){
                 // in map phase, need to calculate percentage completion
                 state->stage = MAP_STAGE;
-                state->percentage = (float) curr_job->contexts_[0].inputVec->size() / (float) curr_job->inputSize;
+                state->percentage = ((float) *(curr_job->contexts_[0].counter) / (float) curr_job->inputSize) * 100;
             }
             else {
                 // haven't started map phase yet
@@ -219,7 +222,8 @@ void getJobState (JobHandle job, JobState *state)
         else{
             // in shuffle phase, need to calculate percentage of shuffle completion
             state->stage = SHUFFLE_STAGE;
-            state->percentage = (float) curr_job->contexts_->shuffledVectors->size() / (float) curr_job->numOfThreads;
+            state->percentage = (float) *curr_job->contexts_[0].counter /
+                    (float) *curr_job->contexts_[0].numOfIntermediatePairs;
 
         }
     }
