@@ -21,7 +21,7 @@ struct ThreadContext {
   std::atomic<long> *counter;
   int *numOfIntermediatePairs;
   std::vector<IntermediateVec *> *shuffledVectors;
-  std::vector<int> *sizesOfShuffledVectors;
+  //std::vector<int> *sizesOfShuffledVectors;
   pthread_mutex_t *mutex;
 };
 
@@ -117,10 +117,10 @@ void shufflePhase (ThreadContext *tc)
                 }
             }
           tc->shuffledVectors->push_back (vecForKey);
-          tc->sizesOfShuffledVectors->push_back ((int) vecForKey->size ());
+          //tc->sizesOfShuffledVectors->push_back ((int) vecForKey->size ());
         }
     }
-
+    tc->counter->operator= (0);
 }
 void reducePhase (ThreadContext *tc)
 {
@@ -132,6 +132,8 @@ void reducePhase (ThreadContext *tc)
       tc->shuffledVectors->pop_back ();
       pthread_mutex_unlock (tc->mutex);
       tc->client->reduce (vecForKey, tc);
+      // reduction finished, adding number of pairs to counter
+      tc->counter->fetch_add((int) vecForKey->size());
     }
 }
 /**
@@ -177,7 +179,7 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
   std::atomic<long> counter (0);
   int *numOfIntermediatePairs = new int (0);
   auto *shuffledVectors = new std::vector<IntermediateVec *> ();
-  auto *sizesOfShuffledVectors = new std::vector<int> ();
+  // auto *sizesOfShuffledVectors = new std::vector<int> ();
   auto *mutex = new pthread_mutex_t ();
 
   if (pthread_mutex_init (mutex, nullptr) != 0)
@@ -208,7 +210,7 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
       context.counter = &counter;
       context.numOfIntermediatePairs = numOfIntermediatePairs;
       context.shuffledVectors = shuffledVectors;
-      context.sizesOfShuffledVectors = sizesOfShuffledVectors;
+      //context.sizesOfShuffledVectors = sizesOfShuffledVectors;
       context.mutex = mutex;
 
     }
@@ -271,8 +273,8 @@ void getJobState (JobHandle job, JobState *state)
 //    {
 //      // in reduce phase, need to calculate percentage of output vector completion
 //      state->stage = REDUCE_STAGE;
-//      state->percentage = (float) curr_job->contexts_[0].outputVec->size ()
-//                          / (float) curr_job->contexts_[0].sizesOfShuffledVectors->size();
+//      state->percentage = (float) *curr_job->contexts_[0].counter
+//                          / (float) *curr_job->contexts_[0].numOfIntermediatePairs;
 //    }
 //  state->percentage *= 100;
 //
