@@ -21,14 +21,14 @@ struct ThreadContext {
   std::atomic<long> *counter;
   int *numOfIntermediatePairs;
   std::vector<IntermediateVec *> *shuffledVectors;
-  std::vector<int>* sizesOfShuffledVectors;
+  std::vector<int> *sizesOfShuffledVectors;
 };
 
 struct Job {
 
-    ThreadContext* contexts_;
-    int numOfThreads;
-    int inputSize;
+  ThreadContext *contexts_;
+  int numOfThreads;
+  int inputSize;
 
 };
 
@@ -56,7 +56,9 @@ void emit2 (K2 *key, V2 *value, void *context)
 }
 void emit3 (K3 *key, V3 *value, void *context)
 {
-
+  ThreadContext *tc = (ThreadContext *) context;
+  OutputPair outputPair = {key, value};
+  tc->outputVec->push_back (outputPair);
 }
 
 void mapPhase (ThreadContext *tc)
@@ -87,7 +89,7 @@ void shufflePhase (ThreadContext *tc)
   if (tc->threadID == 0)
     {
       int sortedPairs = 0;
-      tc->counter->operator=(0);
+      tc->counter->operator= (0);
       for (int i = 0; i < tc->totalThreadsCount; i++)
         {
           IntermediateVec *currentVec = tc->intermediateVectors[i];
@@ -107,13 +109,13 @@ void shufflePhase (ThreadContext *tc)
                       vecForKey->push_back (interVec->back ());
                       interVec->pop_back ();
                       sortedPairs++;
-                      tc->counter->fetch_add(1);
+                      tc->counter->fetch_add (1);
                       if (interVec->empty ()) break;
                       keyToAdd = interVec->at (interVec->size () - 1).first;
                     }
                 }
               tc->shuffledVectors->push_back (vecForKey);
-              tc->sizesOfShuffledVectors->push_back((int) vecForKey->size());
+              tc->sizesOfShuffledVectors->push_back ((int) vecForKey->size ());
             }
         }
     }
@@ -143,6 +145,12 @@ void *threadMapReduce (void *arg)
   tc->barrier->barrier ();
 
   // reduce:
+  tc->stage = REDUCE_STAGE;
+  while (!tc->shuffledVectors->empty ())
+    {
+      tc->client->reduce (tc->shuffledVectors->back (), tc);
+      tc->shuffledVectors->pop_back ();
+    }
 
   return 0;
 }
@@ -196,7 +204,8 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
 
   // creating JobHandler
 
-  return (JobHandle) new Job{contexts,multiThreadLevel,(int) inputVec.size()};
+  return (JobHandle) new Job{contexts, multiThreadLevel,
+                             (int) inputVec.size ()};
 
 }
 
@@ -206,33 +215,41 @@ void waitForJob (JobHandle job)
 }
 void getJobState (JobHandle job, JobState *state)
 {
-    Job* curr_job = (Job*) job;
-    if (curr_job->contexts_[0].outputVec-> empty()){
-        if (curr_job->contexts_[0].shuffledVectors->empty()){
-            if ((curr_job->contexts_[0].stage) == MAP_STAGE){
-                // in map phase, need to calculate percentage completion
-                state->stage = MAP_STAGE;
-                state->percentage = ((float) *(curr_job->contexts_[0].counter) / (float) curr_job->inputSize);
+  Job *curr_job = (Job *) job;
+  if (curr_job->contexts_[0].outputVec->empty ())
+    {
+      if (curr_job->contexts_[0].shuffledVectors->empty ())
+        {
+          if ((curr_job->contexts_[0].stage) == MAP_STAGE)
+            {
+              // in map phase, need to calculate percentage completion
+              state->stage = MAP_STAGE;
+              state->percentage = ((float) *(curr_job->contexts_[0].counter)
+                                   / (float) curr_job->inputSize);
             }
-            else {
-                // haven't started map phase yet
-                state->stage = UNDEFINED_STAGE;
-                state->percentage = 0;
+          else
+            {
+              // haven't started map phase yet
+              state->stage = UNDEFINED_STAGE;
+              state->percentage = 0;
             }
         }
-        else{
-            // in shuffle phase, need to calculate percentage of shuffle completion
-            state->stage = SHUFFLE_STAGE;
-            state->percentage = (float) *curr_job->contexts_[0].counter /
-                    (float) *curr_job->contexts_[0].numOfIntermediatePairs;
+      else
+        {
+          // in shuffle phase, need to calculate percentage of shuffle completion
+          state->stage = SHUFFLE_STAGE;
+          state->percentage = (float) *curr_job->contexts_[0].counter /
+                              (float) *curr_job->contexts_[0].numOfIntermediatePairs;
         }
     }
-    else{
-        // in reduce phase, need to calculate percentage of output vector completion
-        state->stage = REDUCE_STAGE;
-        state->percentage = (float) curr_job->contexts_[0].outputVec->size() /(float) curr_job->inputSize ;
+  else
+    {
+      // in reduce phase, need to calculate percentage of output vector completion
+      state->stage = REDUCE_STAGE;
+      state->percentage = (float) curr_job->contexts_[0].outputVec->size ()
+                          / (float) curr_job->contexts_[0].sizesOfShuffledVectors->size();
     }
-    state->percentage *= 100;
+  state->percentage *= 100;
 }
 void closeJobHandle (JobHandle job)
 {

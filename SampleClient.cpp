@@ -60,7 +60,7 @@ public:
 		}
 		KChar* k3 = new KChar(c);
 		VCount* v3 = new VCount(count);
-		usleep(150000);
+//		usleep(150000);
 		emit3(k3, v3, context);
 	}
 };
