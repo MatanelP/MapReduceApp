@@ -224,7 +224,6 @@ void getJobState (JobHandle job, JobState *state)
             state->stage = SHUFFLE_STAGE;
             state->percentage = (float) *curr_job->contexts_[0].counter /
                     (float) *curr_job->contexts_[0].numOfIntermediatePairs;
-
         }
     }
     else{
