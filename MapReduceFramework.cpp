@@ -60,7 +60,8 @@ void emit3 (K3 *key, V3 *value, void *context)
 }
 
 void mapPhase (ThreadContext *tc)
-{// setStageBitWise (tc->counter, MAP_STAGE);
+{
+  // setStageBitWise (tc->counter, MAP_STAGE);
   tc->stage = MAP_STAGE;
   long index = (*(tc->counter)).fetch_add (1);
   while (index < tc->inputVec->size ())
@@ -208,10 +209,10 @@ void getJobState (JobHandle job, JobState *state)
     Job* curr_job = (Job*) job;
     if (curr_job->contexts_[0].outputVec-> empty()){
         if (curr_job->contexts_[0].shuffledVectors->empty()){
-            if (*(curr_job->contexts_[0].numOfIntermediatePairs) != 0){
+            if ((curr_job->contexts_[0].stage) == MAP_STAGE){
                 // in map phase, need to calculate percentage completion
                 state->stage = MAP_STAGE;
-                state->percentage = ((float) *(curr_job->contexts_[0].counter) / (float) curr_job->inputSize) * 100;
+                state->percentage = ((float) *(curr_job->contexts_[0].counter) / (float) curr_job->inputSize);
             }
             else {
                 // haven't started map phase yet
@@ -231,9 +232,7 @@ void getJobState (JobHandle job, JobState *state)
         state->stage = REDUCE_STAGE;
         state->percentage = (float) curr_job->contexts_[0].outputVec->size() /(float) curr_job->inputSize ;
     }
-
-
-
+    state->percentage *= 100;
 }
 void closeJobHandle (JobHandle job)
 {
