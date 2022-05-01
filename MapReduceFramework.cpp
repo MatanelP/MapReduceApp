@@ -22,7 +22,7 @@ struct ThreadContext {
   int *numOfIntermediatePairs;
   std::vector<IntermediateVec *> *shuffledVectors;
   std::vector<int> *sizesOfShuffledVectors;
-  pthread_mutex_t *mutexForReduce;
+  pthread_mutex_t *mutex;
 };
 
 struct Job {
@@ -58,10 +58,10 @@ void emit2 (K2 *key, V2 *value, void *context)
 void emit3 (K3 *key, V3 *value, void *context)
 {
   auto *tc = (ThreadContext *) context;
-  pthread_mutex_lock(tc->mutexForReduce);
+  pthread_mutex_lock(tc->mutex);
   OutputPair outputPair = {key, value};
   tc->outputVec->push_back (outputPair);
-  pthread_mutex_unlock(tc->mutexForReduce);
+  pthread_mutex_unlock(tc->mutex);
 }
 
 void mapPhase (ThreadContext *tc)
@@ -152,10 +152,10 @@ void *threadMapReduce (void *arg)
 
   while (!tc->shuffledVectors->empty ())
     {
-      pthread_mutex_lock(tc->mutexForReduce);
+      pthread_mutex_lock(tc->mutex);
       IntermediateVec *vecForKey = tc->shuffledVectors->back ();
       tc->shuffledVectors->pop_back ();
-      pthread_mutex_unlock (tc->mutexForReduce);
+      pthread_mutex_unlock (tc->mutex);
       tc->client->reduce (vecForKey, tc);
     }
 
@@ -174,10 +174,10 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
   int *numOfIntermediatePairs = new int (0);
   auto *shuffledVectors = new std::vector<IntermediateVec *> ();
   auto * sizesOfShuffledVectors = new std::vector<int>();
-  auto *mutexForReduce = new pthread_mutex_t();
+  auto *mutex = new pthread_mutex_t();
 
 
-  if (pthread_mutex_init (mutexForReduce, nullptr) != 0 )
+  if (pthread_mutex_init (mutex, nullptr) != 0 )
     {
 //      todo - print error
       exit (EXIT_FAILURE);
@@ -206,7 +206,7 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
       context.numOfIntermediatePairs = numOfIntermediatePairs;
       context.shuffledVectors = shuffledVectors;
       context.sizesOfShuffledVectors = sizesOfShuffledVectors;
-      context.mutexForReduce = mutexForReduce;
+      context.mutex = mutex;
 
     }
 
@@ -234,6 +234,7 @@ void waitForJob (JobHandle job)
 void getJobState (JobHandle job, JobState *state)
 {
   Job *curr_job = (Job *) job;
+  pthread_mutex_lock(curr_job->contexts_[0].mutex);
   if (curr_job->contexts_[0].outputVec->empty ())
     {
       if (curr_job->contexts_[0].shuffledVectors->empty ())
@@ -271,6 +272,9 @@ void getJobState (JobHandle job, JobState *state)
                           / (float) curr_job->contexts_[0].sizesOfShuffledVectors->size();
     }
   state->percentage *= 100;
+
+  pthread_mutex_unlock(curr_job->contexts_[0].mutex);
+
 }
 void closeJobHandle (JobHandle job)
 {
