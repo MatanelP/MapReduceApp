@@ -22,6 +22,7 @@ struct ThreadContext {
   int *numOfIntermediatePairs;
   std::vector<IntermediateVec *> *shuffledVectors;
   std::vector<int> *sizesOfShuffledVectors;
+  pthread_mutex_t *mutexForReduce;
 };
 
 struct Job {
@@ -50,15 +51,17 @@ struct Job {
 
 void emit2 (K2 *key, V2 *value, void *context)
 {
-  ThreadContext *tc = (ThreadContext *) context;
+  auto *tc = (ThreadContext *) context;
   IntermediatePair intermediatePair = {key, value};
   tc->intermediateVectors[tc->threadID]->push_back (intermediatePair);
 }
 void emit3 (K3 *key, V3 *value, void *context)
 {
-  ThreadContext *tc = (ThreadContext *) context;
+  auto *tc = (ThreadContext *) context;
+  pthread_mutex_lock(tc->mutexForReduce);
   OutputPair outputPair = {key, value};
   tc->outputVec->push_back (outputPair);
+  pthread_mutex_unlock(tc->mutexForReduce);
 }
 
 void mapPhase (ThreadContext *tc)
@@ -127,7 +130,7 @@ void shufflePhase (ThreadContext *tc)
  */
 void *threadMapReduce (void *arg)
 {
-  ThreadContext *tc = (ThreadContext *) arg;
+  auto *tc = (ThreadContext *) arg;
   // mapping:
   mapPhase (tc);
 
@@ -146,10 +149,14 @@ void *threadMapReduce (void *arg)
 
   // reduce:
   tc->stage = REDUCE_STAGE;
+
   while (!tc->shuffledVectors->empty ())
     {
-      tc->client->reduce (tc->shuffledVectors->back (), tc);
+      pthread_mutex_lock(tc->mutexForReduce);
+      IntermediateVec *vecForKey = tc->shuffledVectors->back ();
       tc->shuffledVectors->pop_back ();
+      pthread_mutex_unlock (tc->mutexForReduce);
+      tc->client->reduce (vecForKey, tc);
     }
 
   return 0;
@@ -166,7 +173,15 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
   std::atomic<long> counter (0);
   int *numOfIntermediatePairs = new int (0);
   auto *shuffledVectors = new std::vector<IntermediateVec *> ();
+  auto * sizesOfShuffledVectors = new std::vector<int>();
+  auto *mutexForReduce = new pthread_mutex_t();
 
+
+  if (pthread_mutex_init (mutexForReduce, nullptr) != 0 )
+    {
+//      todo - print error
+      exit (EXIT_FAILURE);
+    }
 
 
   // creating new intermediate vectors
@@ -190,6 +205,9 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
       context.counter = &counter;
       context.numOfIntermediatePairs = numOfIntermediatePairs;
       context.shuffledVectors = shuffledVectors;
+      context.sizesOfShuffledVectors = sizesOfShuffledVectors;
+      context.mutexForReduce = mutexForReduce;
+
     }
 
   for (int i = 0; i < multiThreadLevel; ++i)
@@ -224,7 +242,10 @@ void getJobState (JobHandle job, JobState *state)
             {
               // in map phase, need to calculate percentage completion
               state->stage = MAP_STAGE;
-              state->percentage = ((float) *(curr_job->contexts_[0].counter)
+              if ( *(curr_job->contexts_[0].counter) >= curr_job->inputSize)
+                state->percentage = 1;
+              else
+                state->percentage = ((float) *(curr_job->contexts_[0].counter)
                                    / (float) curr_job->inputSize);
             }
           else
