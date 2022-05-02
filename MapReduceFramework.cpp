@@ -23,11 +23,13 @@ struct ThreadContext {
   std::vector<IntermediateVec *> *shuffledVectors;
   //std::vector<int> *sizesOfShuffledVectors;
   pthread_mutex_t *mutex;
+
+  pthread_t **threads;
 };
 
 struct Job {
 
-  ThreadContext *contexts_;
+  ThreadContext **contexts_;
   int numOfThreads;
   int inputSize;
 
@@ -172,11 +174,11 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
                              const InputVec &inputVec, OutputVec &outputVec,
                              int multiThreadLevel)
 {
-  pthread_t threads[multiThreadLevel];
-  ThreadContext contexts[multiThreadLevel];
+  auto ** threads = new pthread_t* [multiThreadLevel];
+  auto** contexts = new ThreadContext*[multiThreadLevel];
   auto *barrier = new Barrier (multiThreadLevel);
   auto **intermediateVectors = new IntermediateVec *[multiThreadLevel];
-  std::atomic<long> counter (0);
+  auto* counter  = new std::atomic<long>(0);
   int *numOfIntermediatePairs = new int (0);
   auto *shuffledVectors = new std::vector<IntermediateVec *> ();
   // auto *sizesOfShuffledVectors = new std::vector<int> ();
@@ -189,41 +191,47 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
     }
 
 
+
   // creating new intermediate vectors
   for (int i = 0; i < multiThreadLevel; ++i)
     {
+      contexts[i] = new ThreadContext();
       intermediateVectors[i] = new IntermediateVec ();
+      threads[i] = new pthread_t ();
     }
 
   // init all contexts
   for (int i = 0; i < multiThreadLevel; ++i)
     {
-      ThreadContext &context = contexts[i];
-      context.threadID = i;
-      context.stage = UNDEFINED_STAGE;
-      context.barrier = barrier;
-      context.client = &client;
-      context.inputVec = &inputVec;
-      context.outputVec = &outputVec;
-      context.totalThreadsCount = multiThreadLevel;
-      context.intermediateVectors = intermediateVectors;
-      context.counter = &counter;
-      context.numOfIntermediatePairs = numOfIntermediatePairs;
-      context.shuffledVectors = shuffledVectors;
+      ThreadContext* context = contexts[i];
+      context->threadID = i;
+      context->stage = UNDEFINED_STAGE;
+      context->barrier = barrier;
+      context->client = &client;
+      context->inputVec = &inputVec;
+      context->outputVec = &outputVec;
+      context->totalThreadsCount = multiThreadLevel;
+      context->intermediateVectors = intermediateVectors;
+      context->counter = counter;
+      context->numOfIntermediatePairs = numOfIntermediatePairs;
+      context->shuffledVectors = shuffledVectors;
       //context.sizesOfShuffledVectors = sizesOfShuffledVectors;
-      context.mutex = mutex;
+      context->mutex = mutex;
+
+      context->threads = threads;
 
     }
 
   for (int i = 0; i < multiThreadLevel; ++i)
     {
-      if (pthread_create (threads + i, NULL, threadMapReduce, contexts + i)
+      if (pthread_create (*(threads + i), NULL, threadMapReduce, *(contexts + i))
           != 0)
         {
 //        todo - print error
           exit (EXIT_FAILURE);
         }
     }
+
 
   // creating JobHandler
 
@@ -234,54 +242,80 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
 
 void waitForJob (JobHandle job)
 {
+//    Job* curr_jub = (Job*) job;
+//    for (int i = 0; i < curr_jub->numOfThreads; ++i){
+//        if ((pthread_join(curr_jub->contexts_[i]->threadID, NULL)) <0){
+//
+//        }
+//
+//    }
 
 }
 void getJobState (JobHandle job, JobState *state)
 {
-//  Job *curr_job = (Job *) job;
-//  pthread_mutex_lock(curr_job->contexts_[0].mutex);
-//  if (curr_job->contexts_[0].outputVec->empty ())
-//    {
-//      if (curr_job->contexts_[0].shuffledVectors->empty ())
-//        {
-//          if ((curr_job->contexts_[0].stage) == MAP_STAGE)
-//            {
-//              // in map phase, need to calculate percentage completion
-//              state->stage = MAP_STAGE;
-//              if ( *(curr_job->contexts_[0].counter) >= curr_job->inputSize)
-//                state->percentage = 1;
-//              else
-//                state->percentage = ((float) *(curr_job->contexts_[0].counter)
-//                                   / (float) curr_job->inputSize);
-//            }
-//          else
-//            {
-//              // haven't started map phase yet
-//              state->stage = UNDEFINED_STAGE;
-//              state->percentage = 0;
-//            }
-//        }
-//      else
-//        {
-//          // in shuffle phase, need to calculate percentage of shuffle completion
-//          state->stage = SHUFFLE_STAGE;
-//          state->percentage = (float) *curr_job->contexts_[0].counter /
-//                              (float) *curr_job->contexts_[0].numOfIntermediatePairs;
-//        }
-//    }
-//  else
-//    {
-//      // in reduce phase, need to calculate percentage of output vector completion
-//      state->stage = REDUCE_STAGE;
-//      state->percentage = (float) *curr_job->contexts_[0].counter
-//                          / (float) *curr_job->contexts_[0].numOfIntermediatePairs;
-//    }
-//  state->percentage *= 100;
-//
-//  pthread_mutex_unlock(curr_job->contexts_[0].mutex);
+  Job *curr_job = (Job *) job;
+  pthread_mutex_lock(curr_job->contexts_[0]->mutex);
+  if (curr_job->contexts_[0]->outputVec->empty ())
+    {
+      if (curr_job->contexts_[0]->shuffledVectors->empty ())
+        {
+          if ((curr_job->contexts_[0]->stage) == MAP_STAGE)
+            {
+              // in map phase, need to calculate percentage completion
+              state->stage = MAP_STAGE;
+              if ( *(curr_job->contexts_[0]->counter) >= curr_job->inputSize)
+                state->percentage = 1;
+              else
+                state->percentage = ((float) *(curr_job->contexts_[0]->counter)
+                                   / (float) curr_job->inputSize);
+            }
+          else
+            {
+              // haven't started map phase yet
+              state->stage = UNDEFINED_STAGE;
+              state->percentage = 0;
+            }
+        }
+      else
+        {
+          // in shuffle phase, need to calculate percentage of shuffle completion
+          state->stage = SHUFFLE_STAGE;
+          state->percentage = (float) *curr_job->contexts_[0]->counter /
+                              (float) *curr_job->contexts_[0]->numOfIntermediatePairs;
+        }
+    }
+  else
+    {
+      // in reduce phase, need to calculate percentage of output vector completion
+      state->stage = REDUCE_STAGE;
+      state->percentage = (float) *curr_job->contexts_[0]->counter
+                          / (float) *curr_job->contexts_[0]->numOfIntermediatePairs;
+    }
+  state->percentage *= 100;
+
+  pthread_mutex_unlock(curr_job->contexts_[0]->mutex);
 
 }
 void closeJobHandle (JobHandle job)
 {
   // finishing job
+  Job* curr_job = (Job*) job;
+
+  delete curr_job->contexts_[0]->counter;
+  delete curr_job->contexts_[0]->shuffledVectors;
+  delete curr_job->contexts_[0]->numOfIntermediatePairs;
+  delete curr_job->contexts_[0]->barrier;
+
+  pthread_mutex_destroy(curr_job->contexts_[0]->mutex);
+
+  for (int i = 0; i < curr_job->numOfThreads; ++i){
+      delete[] curr_job->contexts_[i]->intermediateVectors;
+  }
+  delete[] curr_job->contexts_[0]->intermediateVectors;
+
+  for (int i = 0; i < curr_job->numOfThreads; ++i){
+      delete[] curr_job->contexts_[i];
+  }
+  delete[] curr_job->contexts_;
+
 }
