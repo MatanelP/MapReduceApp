@@ -313,12 +313,13 @@ void closeJobHandle (JobHandle job)
   pthread_mutex_destroy(curr_job->contexts_[0]->mutex);
 
   for (int i = 0; i < curr_job->numOfThreads; ++i){
-      delete[] curr_job->contexts_[i]->intermediateVectors;
+      delete curr_job->contexts_[i]->intermediateVectors[i];
   }
   delete[] curr_job->contexts_[0]->intermediateVectors;
 
   for (int i = 0; i < curr_job->numOfThreads; ++i){
       delete[] curr_job->contexts_[i];
+      delete curr_job->contexts_[i]->threads[i];
   }
   delete[] curr_job->contexts_;
 

@@ -81,7 +81,7 @@ int main(int argc, char** argv)
     inputVec.push_back({nullptr, &s4});
 	JobState state;
     JobState last_state={UNDEFINED_STAGE,0};
-	JobHandle job = startMapReduceJob(client, inputVec, outputVec, 4);
+	JobHandle job = startMapReduceJob(client, inputVec, outputVec, 7);
 	getJobState(job, &state);
     
 	while (state.stage != REDUCE_STAGE || state.percentage != 100.0)
@@ -99,7 +99,7 @@ int main(int argc, char** argv)
 	printf("Done!\n");
 
     waitForJob(job);
-	//closeJobHandle(job);
+	closeJobHandle(job);
 	
 	for (OutputPair& pair: outputVec) {
 		char c = ((const KChar*)pair.first)->c;
