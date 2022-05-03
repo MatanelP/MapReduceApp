@@ -298,6 +298,7 @@ void getJobState (JobHandle job, JobState *state)
   pthread_mutex_unlock(curr_job->contexts_[0]->mutex);
 
 }
+
 void closeJobHandle (JobHandle job)
 {
   // finishing job
