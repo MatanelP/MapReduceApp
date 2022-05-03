@@ -44,7 +44,7 @@ public:
 
 			KChar* k2 = new KChar(i);
 			VCount* v2 = new VCount(counts[i]);
-//			usleep(150000);
+			usleep(150000);
             emit2(k2, v2, context);
 		}
 	}
@@ -60,7 +60,7 @@ public:
 		}
 		KChar* k3 = new KChar(c);
 		VCount* v3 = new VCount(count);
-//		usleep(150000);
+		usleep(150000);
 		emit3(k3, v3, context);
 	}
 };
@@ -74,12 +74,14 @@ int main(int argc, char** argv)
 	VString s1("ababab");
 	VString s2("bcbcbc");
 	VString s3("cacacad");
+    VString s4("ssrhsfffh");
 	inputVec.push_back({nullptr, &s1});
 	inputVec.push_back({nullptr, &s2});
 	inputVec.push_back({nullptr, &s3});
+    inputVec.push_back({nullptr, &s4});
 	JobState state;
     JobState last_state={UNDEFINED_STAGE,0};
-	JobHandle job = startMapReduceJob(client, inputVec, outputVec, 3);
+	JobHandle job = startMapReduceJob(client, inputVec, outputVec, 4);
 	getJobState(job, &state);
     
 	while (state.stage != REDUCE_STAGE || state.percentage != 100.0)
@@ -88,7 +90,7 @@ int main(int argc, char** argv)
             printf("stage %d, %f%% \n", 
 			state.stage, state.percentage);
         }
-//		usleep(100000);
+		usleep(100000);
         last_state = state;
 		getJobState(job, &state);
 	}

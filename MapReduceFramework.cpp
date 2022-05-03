@@ -242,13 +242,15 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
 
 void waitForJob (JobHandle job)
 {
-//    Job* curr_jub = (Job*) job;
-//    for (int i = 0; i < curr_jub->numOfThreads; ++i){
-//        if ((pthread_join(curr_jub->contexts_[i]->threadID, NULL)) <0){
-//
-//        }
-//
-//    }
+    Job* curr_jub = (Job*) job;
+    for (int i = 0; i < curr_jub->numOfThreads; ++i){
+        pthread_mutex_lock(curr_jub->contexts_[i]->mutex);
+        if ((pthread_join(*curr_jub->contexts_[i]->threads[i], nullptr)) <0){
+            //todo -print error
+            exit(EXIT_FAILURE);
+        }
+        pthread_mutex_unlock(curr_jub->contexts_[i]->mutex);
+    }
 
 }
 void getJobState (JobHandle job, JobState *state)
