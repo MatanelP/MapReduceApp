@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include <atomic>
 #include <algorithm>
-#include <iostream>
 #include "MapReduceFramework.h"
 #include "Barrier.h"
 
@@ -21,7 +20,6 @@ struct ThreadContext {
   std::atomic<long> *counter;
   int *numOfIntermediatePairs;
   std::vector<IntermediateVec *> *shuffledVectors;
-  //std::vector<int> *sizesOfShuffledVectors;
   pthread_mutex_t *mutex;
 
   pthread_t **threads;
@@ -30,26 +28,11 @@ struct ThreadContext {
 struct Job {
 
   ThreadContext **contexts_;
+  pthread_t **threads_;
   int numOfThreads;
   int inputSize;
 
 };
-
-//// setting the first 2 bits of the atomic counter according to the stage given
-//void setStageBitWise(std::atomic<long> *counter, stage_t stage){
-//  switch (stage)
-//    {
-//      case UNDEFINED_STAGE:
-//        counter->store (counter->load (),std::memory_order_relaxed);
-//        break;
-//      case MAP_STAGE:
-//        break;
-//      case SHUFFLE_STAGE:
-//        break;
-//      case REDUCE_STAGE:
-//        break;
-//    }
-//}
 
 void emit2 (K2 *key, V2 *value, void *context)
 {
@@ -68,7 +51,6 @@ void emit3 (K3 *key, V3 *value, void *context)
 
 void mapPhase (ThreadContext *tc)
 {
-  // setStageBitWise (tc->counter, MAP_STAGE);
   tc->stage = MAP_STAGE;
   long index = (*(tc->counter)).fetch_add (1);
   while (index < tc->inputVec->size ())
@@ -119,7 +101,6 @@ void shufflePhase (ThreadContext *tc)
                 }
             }
           tc->shuffledVectors->push_back (vecForKey);
-          //tc->sizesOfShuffledVectors->push_back ((int) vecForKey->size ());
         }
     }
     tc->counter->operator= (0);
@@ -136,6 +117,7 @@ void reducePhase (ThreadContext *tc)
       tc->client->reduce (vecForKey, tc);
       // reduction finished, adding number of pairs to counter
       tc->counter->fetch_add((int) vecForKey->size());
+      delete vecForKey;
     }
 }
 /**
@@ -165,8 +147,6 @@ void *threadMapReduce (void *arg)
   // reduce:
   reducePhase (tc);
 
-  tc->barrier->barrier ();
-
   return 0;
 }
 
@@ -181,7 +161,6 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
   auto* counter  = new std::atomic<long>(0);
   int *numOfIntermediatePairs = new int (0);
   auto *shuffledVectors = new std::vector<IntermediateVec *> ();
-  // auto *sizesOfShuffledVectors = new std::vector<int> ();
   auto *mutex = new pthread_mutex_t ();
 
   if (pthread_mutex_init (mutex, nullptr) != 0)
@@ -215,7 +194,6 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
       context->counter = counter;
       context->numOfIntermediatePairs = numOfIntermediatePairs;
       context->shuffledVectors = shuffledVectors;
-      //context.sizesOfShuffledVectors = sizesOfShuffledVectors;
       context->mutex = mutex;
 
       context->threads = threads;
@@ -235,7 +213,7 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
 
   // creating JobHandler
 
-  return (JobHandle) new Job{contexts, multiThreadLevel,
+  return (JobHandle) new Job{contexts, threads,multiThreadLevel,
                              (int) inputVec.size ()};
 
 }
@@ -311,6 +289,7 @@ void closeJobHandle (JobHandle job)
   delete curr_job->contexts_[0]->barrier;
 
   pthread_mutex_destroy(curr_job->contexts_[0]->mutex);
+  delete curr_job->contexts_[0]->mutex;
 
   for (int i = 0; i < curr_job->numOfThreads; ++i){
       delete curr_job->contexts_[i]->intermediateVectors[i];
@@ -318,9 +297,11 @@ void closeJobHandle (JobHandle job)
   delete[] curr_job->contexts_[0]->intermediateVectors;
 
   for (int i = 0; i < curr_job->numOfThreads; ++i){
-      delete[] curr_job->contexts_[i];
       delete curr_job->contexts_[i]->threads[i];
+      delete curr_job->contexts_[i];
   }
   delete[] curr_job->contexts_;
+  delete[] curr_job->threads_;
+  delete curr_job;
 
 }
