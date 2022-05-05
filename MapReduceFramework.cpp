@@ -6,8 +6,8 @@
 #include <atomic>
 #include <algorithm>
 #include <iostream>
-# include "MapReduceFramework.h"
-#include "Barrier/Barrier.h"
+#include "MapReduceFramework.h"
+#include "Barrier.h"
 
 struct ThreadContext {
   int threadID;
