@@ -5,8 +5,12 @@
 #include <cstdlib>
 #include <atomic>
 #include <algorithm>
+#include <iostream>
 #include "MapReduceFramework.h"
 #include "Barrier.h"
+
+
+#define JOIN_ERROR "Error while using pthread_join"
 
 struct ThreadContext {
   int threadID;
@@ -31,6 +35,7 @@ struct Job {
   pthread_t **threads_;
   int numOfThreads;
   int inputSize;
+  bool threadsFinishedFlag;
 
 };
 
@@ -214,21 +219,27 @@ JobHandle startMapReduceJob (const MapReduceClient &client,
   // creating JobHandler
 
   return (JobHandle) new Job{contexts, threads,multiThreadLevel,
-                             (int) inputVec.size ()};
+                             (int) inputVec.size (), false};
 
 }
 
 void waitForJob (JobHandle job)
 {
     Job* curr_jub = (Job*) job;
-    for (int i = 0; i < curr_jub->numOfThreads; ++i){
-        pthread_mutex_lock(curr_jub->contexts_[i]->mutex);
-        if ((pthread_join(*curr_jub->contexts_[i]->threads[i], nullptr)) <0){
-            //todo -print error
-            exit(EXIT_FAILURE);
+    if (!curr_jub->threadsFinishedFlag){
+        for (int i = 0; i < curr_jub->numOfThreads; ++i){
+            pthread_mutex_lock(curr_jub->contexts_[i]->mutex);
+            if ((pthread_join(*curr_jub->contexts_[i]->threads[i], nullptr)) <0){
+                std::cerr << JOIN_ERROR << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            pthread_mutex_unlock(curr_jub->contexts_[i]->mutex);
         }
-        pthread_mutex_unlock(curr_jub->contexts_[i]->mutex);
+        curr_jub->threadsFinishedFlag = true;
     }
+
+
+
 
 }
 void getJobState (JobHandle job, JobState *state)
@@ -281,7 +292,9 @@ void getJobState (JobHandle job, JobState *state)
 void closeJobHandle (JobHandle job)
 {
   // finishing job
+  waitForJob(job);
   Job* curr_job = (Job*) job;
+
 
   delete curr_job->contexts_[0]->counter;
   delete curr_job->contexts_[0]->shuffledVectors;

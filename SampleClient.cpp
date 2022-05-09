@@ -98,7 +98,6 @@ int main(int argc, char** argv)
 			state.stage, state.percentage);
 	printf("Done!\n");
 
-    waitForJob(job);
 	closeJobHandle(job);
 	
 	for (OutputPair& pair: outputVec) {
